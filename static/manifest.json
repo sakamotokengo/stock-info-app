@@ -1,0 +1,14 @@
+{
+  "name": "株式情報ダッシュボード",
+  "short_name": "株ダッシュ",
+  "description": "株価・財務データ・AI売買判断・マルチバガースクリーニング",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1e293b",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

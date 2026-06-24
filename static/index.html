@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>株式情報ダッシュボード</title>
+
+  <!-- PWA / iOS ホーム画面追加 -->
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#1e293b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="株ダッシュ">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+    header { background: #1e293b; border-bottom: 1px solid #334155; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 1.25rem; font-weight: 700; color: #38bdf8; }
+    .search-box { display: flex; gap: 8px; margin-left: auto; }
+    .search-box input { background: #0f172a; border: 1px solid #475569; border-radius: 8px; padding: 8px 14px; color: #e2e8f0; font-size: 0.9rem; width: 200px; }
+    .search-box input:focus { outline: none; border-color: #38bdf8; }
+    .btn { background: #38bdf8; color: #0f172a; border: none; border-radius: 8px; padding: 8px 18px; font-weight: 600; cursor: pointer; font-size: 0.9rem; transition: background 0.2s; }
+    .btn:hover { background: #7dd3fc; }
+    .btn-ghost { background: transparent; color: #94a3b8; border: 1px solid #475569; }
+    .btn-ghost:hover { background: #1e293b; color: #e2e8f0; }
+
+    .watchlist { background: #1e293b; border-bottom: 1px solid #334155; padding: 12px 24px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .watchlist-label { font-size: 0.8rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+    .chip { background: #0f172a; border: 1px solid #334155; border-radius: 999px; padding: 5px 14px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+    .chip:hover, .chip.active { border-color: #38bdf8; color: #38bdf8; }
+    .chip .remove { color: #64748b; font-size: 0.75rem; cursor: pointer; }
+    .chip .remove:hover { color: #f87171; }
+
+    main { padding: 24px; display: grid; gap: 24px; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; }
+    .card-title { font-size: 0.8rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+
+    .stock-header { margin-bottom: 20px; }
+    .stock-name { font-size: 1.5rem; font-weight: 700; }
+    .stock-ticker { font-size: 0.9rem; color: #64748b; margin-bottom: 8px; }
+    .price-row { display: flex; align-items: baseline; gap: 12px; }
+    .price { font-size: 2.5rem; font-weight: 700; }
+    .change { font-size: 1rem; font-weight: 600; padding: 2px 10px; border-radius: 6px; }
+    .up { color: #34d399; background: rgba(52,211,153,0.1); }
+    .down { color: #f87171; background: rgba(248,113,113,0.1); }
+
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-top: 16px; }
+    .metric { background: #0f172a; border-radius: 8px; padding: 12px; }
+    .metric-label { font-size: 0.75rem; color: #64748b; margin-bottom: 4px; }
+    .metric-value { font-size: 1.1rem; font-weight: 600; }
+
+    .chart-wrap { position: relative; height: 240px; }
+
+    .fin-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .fin-table tr { border-bottom: 1px solid #1e293b; }
+    .fin-table td { padding: 8px 4px; }
+    .fin-table td:first-child { color: #94a3b8; }
+    .fin-table td:last-child { text-align: right; font-weight: 600; }
+
+    .news-list { display: flex; flex-direction: column; gap: 12px; }
+    .news-item { border-left: 3px solid #334155; padding-left: 12px; }
+    .news-item:hover { border-color: #38bdf8; }
+    .news-source { font-size: 0.75rem; color: #64748b; margin-bottom: 2px; }
+    .news-title a { color: #e2e8f0; text-decoration: none; font-size: 0.9rem; line-height: 1.4; }
+    .news-title a:hover { color: #38bdf8; }
+    .news-date { font-size: 0.75rem; color: #64748b; margin-top: 2px; }
+
+    .bbs-list { display: flex; flex-direction: column; gap: 10px; max-height: 360px; overflow-y: auto; }
+    .bbs-post { background: #0f172a; border-radius: 8px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.5; }
+    .bbs-time { font-size: 0.75rem; color: #64748b; margin-top: 4px; }
+
+    .empty { color: #475569; font-size: 0.9rem; text-align: center; padding: 40px; }
+    .loading { color: #64748b; font-size: 0.9rem; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    .sector-badge { display: inline-block; background: #1e3a5f; color: #7dd3fc; border-radius: 4px; padding: 2px 8px; font-size: 0.75rem; margin-top: 6px; }
+
+    .ai-card { border-color: #4f46e5; }
+    .ai-verdict { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+    .verdict-badge { font-size: 1.8rem; font-weight: 800; padding: 8px 24px; border-radius: 10px; letter-spacing: 0.05em; }
+    .verdict-BUY { background: rgba(52,211,153,0.15); color: #34d399; border: 2px solid #34d399; }
+    .verdict-SELL { background: rgba(248,113,113,0.15); color: #f87171; border: 2px solid #f87171; }
+    .verdict-HOLD { background: rgba(251,191,36,0.15); color: #fbbf24; border: 2px solid #fbbf24; }
+    .confidence-bar { flex: 1; }
+    .confidence-label { font-size: 0.75rem; color: #64748b; margin-bottom: 4px; }
+    .bar-track { background: #0f172a; border-radius: 999px; height: 8px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 999px; transition: width 0.6s ease; }
+    .ai-reasons { margin-top: 8px; }
+    .ai-reasons ul { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .ai-reasons li { padding-left: 20px; position: relative; font-size: 0.9rem; line-height: 1.5; }
+    .ai-reasons li::before { content: "▶"; position: absolute; left: 0; font-size: 0.7rem; color: #64748b; top: 3px; }
+    .ai-risks ul li::before { color: #f87171; }
+    .ai-section-title { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin: 12px 0 6px; }
+    .ai-disclaimer { font-size: 0.75rem; color: #475569; margin-top: 14px; border-top: 1px solid #334155; padding-top: 10px; }
+    .trade-plan { margin-top: 16px; background: #0f172a; border-radius: 10px; padding: 14px 16px; }
+    .trade-plan-title { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+    .trade-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+    .trade-cell { background: #1e293b; border-radius: 8px; padding: 10px 12px; }
+    .trade-cell-label { font-size: 0.72rem; color: #64748b; margin-bottom: 4px; }
+    .trade-cell-value { font-size: 1.05rem; font-weight: 700; }
+    .trade-cell-sub { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
+    .stop-val { color: #f87171; }
+    .target-val { color: #34d399; }
+    .pos-val { color: #fbbf24; }
+    .trade-basis { font-size: 0.75rem; color: #475569; margin-top: 10px; line-height: 1.6; }
+    .confidence-detail { font-size: 0.75rem; color: #475569; margin-top: 8px; line-height: 1.6; padding: 8px 10px; background: #0f172a; border-radius: 6px; }
+    .mb-section { margin-top: 18px; border-top: 1px solid #334155; padding-top: 16px; }
+    .mb-header { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+    .mb-badge { font-size: 0.9rem; font-weight: 700; padding: 6px 16px; border-radius: 8px; }
+    .mb-green { background: rgba(52,211,153,0.15); color: #34d399; border: 1px solid #34d399; }
+    .mb-yellow { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid #fbbf24; }
+    .mb-red { background: rgba(248,113,113,0.15); color: #f87171; border: 1px solid #f87171; }
+    .mb-bar-wrap { flex: 1; }
+    .mb-bar-label { font-size: 0.75rem; color: #64748b; margin-bottom: 3px; }
+    .mb-checks { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+    .mb-check { font-size: 0.85rem; line-height: 1.5; padding: 6px 10px; background: #0f172a; border-radius: 6px; }
+    .mb-paper { font-size: 0.72rem; color: #475569; margin-top: 8px; font-style: italic; }
+    .mb-note { font-size: 0.75rem; color: #64748b; margin-top: 4px; line-height: 1.5; }
+
+    /* スクリーニングパネル */
+    .screen-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; overflow-y:auto; padding:24px; }
+    .screen-panel { background:#1e293b; border:1px solid #334155; border-radius:14px; max-width:800px; margin:0 auto; padding:24px; }
+    .screen-panel-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+    .screen-panel-header h2 { font-size:1.1rem; font-weight:700; color:#38bdf8; }
+    .btn-close { background:transparent; border:none; color:#64748b; font-size:1.4rem; cursor:pointer; line-height:1; }
+    .btn-close:hover { color:#e2e8f0; }
+    .market-tabs { display:flex; gap:8px; margin-bottom:16px; }
+    .market-tab { padding:6px 20px; border-radius:6px; cursor:pointer; font-size:0.85rem; color:#64748b; background:#0f172a; border:1px solid #334155; transition:all 0.2s; }
+    .market-tab.active { color:#38bdf8; border-color:#38bdf8; }
+    .screen-result-list { display:flex; flex-direction:column; gap:10px; }
+    .screen-card { background:#0f172a; border:1px solid #334155; border-radius:10px; padding:14px 16px; cursor:pointer; transition:border-color 0.2s; }
+    .screen-card:hover { border-color:#4f46e5; }
+    .screen-card-header { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+    .screen-rank { font-size:0.75rem; color:#475569; width:24px; text-align:right; }
+    .screen-ticker { font-size:1rem; font-weight:700; color:#38bdf8; min-width:80px; }
+    .screen-name { font-size:0.85rem; color:#94a3b8; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .screen-price { font-size:0.9rem; font-weight:600; }
+    .screen-score-bar { display:flex; align-items:center; gap:10px; }
+    .screen-score-label { font-size:0.75rem; color:#64748b; min-width:60px; }
+    .screen-tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
+    .screen-tag { font-size:0.72rem; padding:2px 8px; border-radius:999px; }
+    .screen-tag-pass { background:rgba(52,211,153,0.1); color:#34d399; border:1px solid rgba(52,211,153,0.3); }
+    .screen-tag-fail { background:rgba(248,113,113,0.1); color:#f87171; border:1px solid rgba(248,113,113,0.2); }
+    .screen-empty { color:#475569; text-align:center; padding:40px; }
+    .btn-screen { background:#4f46e5; color:#fff; border:none; border-radius:8px; padding:8px 16px; font-weight:600; cursor:pointer; font-size:0.85rem; transition:background 0.2s; }
+    .btn-screen:hover { background:#6366f1; }
+    .screen-meta { font-size:0.8rem; color:#64748b; margin-bottom:12px; }
+    .btn-analyze { background: #4f46e5; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-weight: 600; cursor: pointer; font-size: 0.9rem; transition: background 0.2s; display: flex; align-items: center; gap: 6px; }
+    .btn-analyze:hover { background: #6366f1; }
+    .btn-analyze:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .tab-bar { display: flex; gap: 4px; margin-bottom: 16px; }
+    .tab { padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; color: #64748b; transition: all 0.2s; }
+    .tab.active { background: #0f172a; color: #38bdf8; }
+    .tab:hover { color: #e2e8f0; }
+
+    /* ===== モバイル / iOS対応 ===== */
+    /* iOS safe area（ノッチ・ホームバー）対応 */
+    header { padding-top: max(16px, env(safe-area-inset-top)); padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+    main { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+
+    /* タッチターゲット最小44px（Apple HIG準拠） */
+    .btn, .btn-ghost, .btn-analyze, .btn-screen, .btn-close, .chip, .market-tab {
+      min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+    }
+    .chip { padding: 8px 16px; }
+
+    @media (max-width: 640px) {
+      /* ヘッダー：縦並び */
+      header { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); }
+      header h1 { font-size: 1.1rem; }
+      .search-box { margin-left: 0; flex-wrap: nowrap; width: 100%; }
+      .search-box input { flex: 1; min-width: 0; width: auto; font-size: 16px; /* iOSズーム防止 */ }
+      .btn-screen { white-space: nowrap; font-size: 0.8rem; padding: 0 12px; }
+
+      /* ウォッチリスト：横スクロール */
+      .watchlist { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 8px 16px; gap: 8px; scrollbar-width: none; }
+      .watchlist::-webkit-scrollbar { display: none; }
+      .watchlist-label { flex-shrink: 0; }
+      .chip { flex-shrink: 0; }
+
+      /* メインコンテンツ */
+      main { padding: 12px; gap: 12px; }
+      .card { padding: 14px 12px; border-radius: 10px; }
+      .card-title { font-size: 0.75rem; }
+
+      /* 株価ヘッダー */
+      .stock-name { font-size: 1.2rem; }
+      .price { font-size: 1.9rem; }
+      .metrics { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .metric { padding: 8px; }
+      .metric-label { font-size: 0.7rem; }
+      .metric-value { font-size: 0.95rem; }
+
+      /* チャート */
+      .chart-wrap { height: 180px; }
+
+      /* 財務テーブル */
+      .fin-table { font-size: 0.82rem; }
+      .fin-table td { padding: 6px 2px; }
+
+      /* ニュース */
+      .news-title a { font-size: 0.85rem; }
+
+      /* トレードプラン */
+      .trade-grid { grid-template-columns: repeat(2, 1fr); }
+      .trade-cell-value { font-size: 0.95rem; }
+
+      /* マルチバガー */
+      .mb-check { font-size: 0.8rem; }
+
+      /* スクリーニングパネル：全画面 */
+      .screen-overlay { padding: 0; align-items: flex-end; display: flex; flex-direction: column; justify-content: flex-end; }
+      .screen-panel { border-radius: 18px 18px 0 0; min-height: 80vh; max-height: 95vh; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px 16px; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+      .screen-panel-header h2 { font-size: 1rem; }
+
+      /* 売買判断カード */
+      .ai-verdict { flex-direction: column; align-items: flex-start; gap: 10px; }
+      .verdict-badge { font-size: 1.4rem; }
+      .confidence-bar { width: 100%; }
+
+      /* 確信度テキスト */
+      .confidence-detail { font-size: 0.72rem; }
+    }
+
+    @media (max-width: 380px) {
+      .price { font-size: 1.6rem; }
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+      .trade-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📈 株式情報ダッシュボード</h1>
+  <div class="search-box">
+    <button class="btn-screen" onclick="openScreener()">🔍 MB候補スクリーニング</button>
+    <input type="text" id="searchInput" placeholder="例: 7203.T, AAPL, TSLA" />
+    <button class="btn" onclick="addAndSearch()">追加 / 検索</button>
+  </div>
+</header>
+
+<!-- スクリーニングパネル -->
+<div class="screen-overlay" id="screenOverlay" onclick="closeScreenerOnBg(event)">
+  <div class="screen-panel">
+    <div class="screen-panel-header">
+      <h2>🚀 マルチバガー候補スクリーニング</h2>
+      <button class="btn-close" onclick="closeScreener()">✕</button>
+    </div>
+    <p style="font-size:0.82rem;color:#64748b;margin-bottom:14px">
+      Yartseva (2025) 論文の基準で約70銘柄をスコアリングし、上位候補を表示します。<br>
+      取得に20〜40秒程度かかります。銘柄をクリックすると詳細を表示します。
+    </p>
+    <div class="market-tabs">
+      <div class="market-tab active" id="tab-US" onclick="selectMarket('US')">🇺🇸 米国株</div>
+      <div class="market-tab" id="tab-JP" onclick="selectMarket('JP')">🇯🇵 日本株</div>
+    </div>
+    <button class="btn-analyze" id="screenRunBtn" onclick="runScreener()" style="margin-bottom:16px">
+      <span>スクリーニング実行</span>
+    </button>
+    <div id="screenResults"></div>
+  </div>
+</div>
+
+<div class="watchlist" id="watchlist">
+  <span class="watchlist-label">ウォッチリスト</span>
+</div>
+
+<main>
+  <div id="stockSection" style="display:none">
+    <div class="card stock-header" id="stockHeader"></div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">株価チャート（1ヶ月）</div>
+        <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">財務指標</div>
+        <div id="financials"><div class="loading">読込中...</div></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">最新ニュース</div>
+        <div id="newsSection"><div class="loading">読込中...</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">掲示板の話題 <span style="font-size:0.75rem;color:#64748b">（日本株のみ）</span></div>
+        <div id="bbsSection"><div class="empty">銘柄コードを選択すると表示されます</div></div>
+      </div>
+    </div>
+
+    <div class="card ai-card">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+        <span>📊 売買判断 <span style="font-size:0.7rem;color:#4f46e5">ルールベース分析</span></span>
+        <button class="btn-analyze" id="analyzeBtn" onclick="runAnalysis()">
+          <span>分析を実行</span>
+        </button>
+      </div>
+      <div id="aiSection"><div class="empty" style="padding:20px 0">「分析を実行」ボタンを押すと、収集したデータをもとにAIが売買判断を行います</div></div>
+    </div>
+  </div>
+
+  <div id="emptyState" class="card">
+    <div class="empty">
+      銘柄コードを入力して検索してください<br>
+      <span style="color:#475569;font-size:0.8rem">例: 7203.T（トヨタ）　AAPL（Apple）　9984.T（ソフトバンク）</span>
+    </div>
+  </div>
+</main>
+
+<script>
+let chart = null;
+let watchlist = JSON.parse(localStorage.getItem('watchlist') || '["7203.T","AAPL","9984.T"]');
+
+function renderWatchlist() {
+  const el = document.getElementById('watchlist');
+  const chips = watchlist.map(t => `
+    <span class="chip" onclick="searchStock('${t}')">
+      ${t}
+      <span class="remove" onclick="removeFromWatchlist(event,'${t}')">✕</span>
+    </span>
+  `).join('');
+  el.innerHTML = `<span class="watchlist-label">ウォッチリスト</span>${chips}`;
+}
+
+function removeFromWatchlist(e, ticker) {
+  e.stopPropagation();
+  watchlist = watchlist.filter(t => t !== ticker);
+  localStorage.setItem('watchlist', JSON.stringify(watchlist));
+  renderWatchlist();
+}
+
+function addAndSearch() {
+  const raw = document.getElementById('searchInput').value.trim();
+  const v = raw.toUpperCase();
+  if (!v) return;
+
+  // 日本語・漢字等が含まれる場合は警告
+  if (/[^\x00-\x7F]/.test(raw)) {
+    document.getElementById('emptyState').style.display = 'block';
+    document.getElementById('emptyState').innerHTML = `
+      <div class="empty">
+        <div style="color:#f87171;margin-bottom:8px">⚠ 社名での検索はできません</div>
+        <div style="font-size:0.85rem">ティッカーコードで入力してください</div>
+        <div style="font-size:0.8rem;color:#475569;margin-top:8px">
+          例: 楽天 → <strong style="color:#38bdf8">4755</strong> または <strong style="color:#38bdf8">4755.T</strong><br>
+          トヨタ → <strong style="color:#38bdf8">7203.T</strong>　ソフトバンクG → <strong style="color:#38bdf8">9984.T</strong>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (!watchlist.includes(v)) {
+    watchlist.push(v);
+    localStorage.setItem('watchlist', JSON.stringify(watchlist));
+    renderWatchlist();
+  }
+  searchStock(v);
+}
+
+async function searchStock(ticker) {
+  currentTicker = ticker;
+  document.getElementById('searchInput').value = ticker;
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('stockSection').style.display = 'block';
+  document.getElementById('stockHeader').innerHTML = '<div class="loading">読込中...</div>';
+  document.getElementById('financials').innerHTML = '<div class="loading">読込中...</div>';
+  document.getElementById('newsSection').innerHTML = '<div class="loading">読込中...</div>';
+  document.getElementById('bbsSection').innerHTML = '<div class="loading">読込中...</div>';
+  document.getElementById('aiSection').innerHTML = '<div class="empty" style="padding:20px 0">「分析を実行」ボタンを押すと、収集したデータをもとにAIが売買判断を行います</div>';
+  document.getElementById('analyzeBtn').innerHTML = '<span>分析を実行</span>';
+  document.getElementById('analyzeBtn').disabled = false;
+  if (chart) { chart.destroy(); chart = null; }
+
+  await Promise.all([
+    loadStock(ticker),
+    loadFinancials(ticker),
+    loadNews(),
+    loadBbs(ticker),
+  ]);
+}
+
+async function loadStock(ticker) {
+  try {
+    const r = await fetch(`/api/stock/${ticker}`);
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail); }
+    const d = await r.json();
+
+    const changeSign = d.change_pct >= 0 ? '+' : '';
+    const changeClass = d.change_pct >= 0 ? 'up' : 'down';
+    const price = d.price ? `${d.price.toLocaleString()} ${d.currency}` : 'N/A';
+    const changePct = d.change_pct ? `${changeSign}${d.change_pct.toFixed(2)}%` : '';
+
+    document.getElementById('stockHeader').innerHTML = `
+      <div class="stock-ticker">${d.ticker}</div>
+      <div class="stock-name">${d.name}</div>
+      ${d.sector ? `<span class="sector-badge">${d.sector} / ${d.industry}</span>` : ''}
+      <div class="price-row" style="margin-top:12px">
+        <span class="price">${price}</span>
+        ${changePct ? `<span class="change ${changeClass}">${changePct}</span>` : ''}
+      </div>
+      <div class="metrics">
+        <div class="metric"><div class="metric-label">時価総額</div><div class="metric-value">${d.market_cap ? (d.market_cap/1e8).toFixed(0)+'億' : 'N/A'}</div></div>
+        <div class="metric"><div class="metric-label">PER</div><div class="metric-value">${d.per ? d.per.toFixed(1)+'倍' : 'N/A'}</div></div>
+        <div class="metric"><div class="metric-label">PBR</div><div class="metric-value">${d.pbr ? d.pbr.toFixed(2)+'倍' : 'N/A'}</div></div>
+        <div class="metric"><div class="metric-label">EPS</div><div class="metric-value">${d.eps ? d.eps.toFixed(2) : 'N/A'}</div></div>
+        <div class="metric"><div class="metric-label">配当利回り</div><div class="metric-value">${d.dividend_yield ? (d.dividend_yield*100).toFixed(2)+'%' : 'N/A'}</div></div>
+      </div>
+    `;
+
+    if (d.prices && d.prices.length) {
+      const ctx = document.getElementById('priceChart').getContext('2d');
+      const labels = d.prices.map(p => p.date);
+      const values = d.prices.map(p => p.close);
+      const isUp = values[values.length-1] >= values[0];
+      const color = isUp ? '#34d399' : '#f87171';
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            borderColor: color,
+            backgroundColor: color + '20',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#64748b', maxTicksLimit: 6 }, grid: { color: '#1e293b' } },
+            y: { ticks: { color: '#64748b' }, grid: { color: '#334155' } }
+          }
+        }
+      });
+    }
+  } catch(e) {
+    document.getElementById('stockHeader').innerHTML = `
+      <div class="empty" style="text-align:left;padding:16px">
+        <div style="color:#f87171;margin-bottom:8px">⚠ データ取得エラー</div>
+        <div style="font-size:0.85rem">${e.message}</div>
+        <div style="font-size:0.8rem;color:#475569;margin-top:8px">
+          例: 米国株 → AAPL / TSLA / GOOGL<br>
+          日本株 → 7203.T / 6758.T / 9984.T
+        </div>
+      </div>`;
+  }
+}
+
+async function loadFinancials(ticker) {
+  try {
+    const r = await fetch(`/api/financials/${ticker}`);
+    const d = await r.json();
+    const rows = [
+      ['売上高', d.revenue != null ? d.revenue+'億' : 'N/A'],
+      ['純利益', d.net_income != null ? d.net_income+'億' : 'N/A'],
+      ['営業利益率', d.operating_margin != null ? d.operating_margin+'%' : 'N/A'],
+      ['純利益率', d.profit_margin != null ? d.profit_margin+'%' : 'N/A'],
+      ['ROE', d.roe != null ? d.roe+'%' : 'N/A'],
+      ['ROA', d.roa != null ? d.roa+'%' : 'N/A'],
+      ['PER（実績）', d.per != null ? d.per+'倍' : 'N/A'],
+      ['PER（予想）', d.forward_per != null ? d.forward_per+'倍' : 'N/A'],
+      ['PBR', d.pbr != null ? d.pbr+'倍' : 'N/A'],
+      ['PSR', d.psr != null ? d.psr+'倍' : 'N/A'],
+      ['EV/EBITDA', d.ev_ebitda != null ? d.ev_ebitda+'倍' : 'N/A'],
+      ['D/Eレシオ', d.debt_to_equity != null ? d.debt_to_equity : 'N/A'],
+      ['流動比率', d.current_ratio != null ? d.current_ratio : 'N/A'],
+    ].map(([k,v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+    document.getElementById('financials').innerHTML = `<table class="fin-table">${rows}</table>`;
+  } catch(e) {
+    document.getElementById('financials').innerHTML = `<div class="empty">取得できませんでした</div>`;
+  }
+}
+
+async function loadNews() {
+  try {
+    const r = await fetch('/api/news');
+    const d = await r.json();
+    if (!d.articles.length) { document.getElementById('newsSection').innerHTML = '<div class="empty">ニュースなし</div>'; return; }
+    const html = d.articles.slice(0,12).map(a => `
+      <div class="news-item">
+        <div class="news-source">${a.source}</div>
+        <div class="news-title"><a href="${a.link}" target="_blank">${a.title}</a></div>
+        <div class="news-date">${a.published}</div>
+      </div>
+    `).join('');
+    document.getElementById('newsSection').innerHTML = `<div class="news-list">${html}</div>`;
+  } catch(e) {
+    document.getElementById('newsSection').innerHTML = `<div class="empty">取得できませんでした</div>`;
+  }
+}
+
+async function loadBbs(ticker) {
+  const code = ticker.replace('.T','').replace(/[^0-9]/g,'');
+  if (!code) {
+    document.getElementById('bbsSection').innerHTML = '<div class="empty">日本株コード（例: 7203.T）のみ対応</div>';
+    return;
+  }
+  try {
+    const r = await fetch(`/api/bbs/${code}`);
+    const d = await r.json();
+    if (!d.posts || !d.posts.length) {
+      document.getElementById('bbsSection').innerHTML = `
+        <div class="empty">掲示板の投稿が取得できませんでした<br>
+        <a href="${d.url||''}" target="_blank" style="color:#38bdf8;font-size:0.85rem">Yahoo掲示板を開く</a></div>`;
+      return;
+    }
+    const html = d.posts.map(p => `
+      <div class="bbs-post">
+        ${p.text}
+        ${p.time ? `<div class="bbs-time">${p.time}</div>` : ''}
+      </div>
+    `).join('');
+    document.getElementById('bbsSection').innerHTML = `<div class="bbs-list">${html}</div>`;
+  } catch(e) {
+    document.getElementById('bbsSection').innerHTML = '<div class="empty">取得できませんでした</div>';
+  }
+}
+
+let currentTicker = null;
+
+function buildMultibaggerHtml(mb) {
+  if (!mb) return '';
+  const colorClass = `mb-${mb.color}`;
+  const checksHtml = (mb.checks || []).map(([icon, text]) =>
+    `<div class="mb-check">${icon} ${text}</div>`
+  ).join('');
+  return `
+    <div class="mb-section">
+      <div class="ai-section-title">🚀 マルチバガー候補スコア <span style="font-size:0.68rem;color:#475569;font-weight:400">（論文ベース）</span></div>
+      <div class="mb-header">
+        <div class="mb-badge ${colorClass}">${mb.verdict}</div>
+        <div class="mb-bar-wrap">
+          <div class="mb-bar-label">${mb.score} / ${mb.max_score} 点（${mb.score_pct}%）</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${mb.score_pct}%;background:${mb.color==='green'?'#34d399':mb.color==='yellow'?'#fbbf24':'#f87171'}"></div></div>
+        </div>
+      </div>
+      <div class="mb-checks">${checksHtml}</div>
+      <div class="mb-note">⚠ ${mb.note}</div>
+      <div class="mb-paper">出典: ${mb.paper}</div>
+    </div>`;
+}
+
+async function runAnalysis() {
+  if (!currentTicker) return;
+  const btn = document.getElementById('analyzeBtn');
+  const section = document.getElementById('aiSection');
+  btn.disabled = true;
+  btn.innerHTML = '<span style="animation:pulse 1s infinite;display:inline-block">分析中...</span>';
+  section.innerHTML = '<div class="loading" style="padding:20px 0">分析中...</div>';
+
+  try {
+    const r = await fetch(`/api/analyze/${currentTicker}`);
+    const d = await r.json();
+    if (!r.ok) { throw new Error(d.detail || 'エラーが発生しました'); }
+
+    const verdictClass = `verdict-${d.verdict}`;
+    const barColor = d.verdict === 'BUY' ? '#34d399' : d.verdict === 'SELL' ? '#f87171' : '#fbbf24';
+    const reasonsHtml = (d.reasons || []).map(r => `<li>${r}</li>`).join('');
+    const risksHtml = (d.risks || []).map(r => `<li>${r}</li>`).join('');
+
+    // 売買プラン（BUY/SELL時のみ）
+    let tradePlanHtml = '';
+    if (d.trade_plan) {
+      const tp = d.trade_plan;
+      const cur = tp.currency;
+      const fmt = v => cur === 'JPY' ? `${v.toLocaleString()}円` : `${v.toFixed(2)} ${cur}`;
+      tradePlanHtml = `
+        <div class="trade-plan">
+          <div class="trade-plan-title">📋 トレードプラン（${d.verdict}想定）</div>
+          <div class="trade-grid">
+            <div class="trade-cell">
+              <div class="trade-cell-label">現在値</div>
+              <div class="trade-cell-value">${fmt(tp.current_price)}</div>
+            </div>
+            <div class="trade-cell">
+              <div class="trade-cell-label">損切りライン</div>
+              <div class="trade-cell-value stop-val">${fmt(tp.stop_loss)}</div>
+              <div class="trade-cell-sub">−${tp.stop_loss_pct}%</div>
+            </div>
+            <div class="trade-cell">
+              <div class="trade-cell-label">利益確定目標</div>
+              <div class="trade-cell-value target-val">${fmt(tp.target_price)}</div>
+              <div class="trade-cell-sub">+${tp.target_pct}% （RR比 ${tp.risk_reward_ratio}）</div>
+            </div>
+            <div class="trade-cell">
+              <div class="trade-cell-label">推奨保有比率</div>
+              <div class="trade-cell-value pos-val">${tp.position_size_pct}%</div>
+              <div class="trade-cell-sub">総資産に対して</div>
+            </div>
+          </div>
+          <div class="trade-basis">${tp.basis}</div>
+        </div>`;
+    }
+
+    section.innerHTML = `
+      <div class="ai-verdict">
+        <div class="verdict-badge ${verdictClass}">${d.verdict}</div>
+        <div class="confidence-bar">
+          <div class="confidence-label">確信度: ${d.confidence}%</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${d.confidence}%;background:${barColor}"></div></div>
+          ${d.confidence_basis ? `<div class="confidence-detail">${d.confidence_basis}</div>` : ''}
+        </div>
+      </div>
+      <div class="ai-reasons">
+        <div class="ai-section-title">判断理由</div>
+        <ul>${reasonsHtml}</ul>
+      </div>
+      ${risksHtml ? `
+      <div class="ai-reasons ai-risks">
+        <div class="ai-section-title">リスク要因</div>
+        <ul>${risksHtml}</ul>
+      </div>` : ''}
+      ${tradePlanHtml}
+      ${buildMultibaggerHtml(d.multibagger)}
+      <div class="ai-disclaimer">${d.disclaimer || '本分析は投資助言ではありません。最終判断はご自身でお願いします。'}</div>
+    `;
+  } catch(e) {
+    section.innerHTML = `<div class="empty">エラー: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span>再分析</span>';
+  }
+}
+
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addAndSearch();
+});
+
+// ---- スクリーニング ----
+let selectedMarket = 'US';
+
+function openScreener() {
+  document.getElementById('screenOverlay').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeScreener() {
+  document.getElementById('screenOverlay').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function closeScreenerOnBg(e) {
+  if (e.target === document.getElementById('screenOverlay')) closeScreener();
+}
+
+function selectMarket(m) {
+  selectedMarket = m;
+  document.getElementById('tab-US').classList.toggle('active', m === 'US');
+  document.getElementById('tab-JP').classList.toggle('active', m === 'JP');
+  document.getElementById('screenResults').innerHTML = '';
+}
+
+async function runScreener() {
+  const btn = document.getElementById('screenRunBtn');
+  const results = document.getElementById('screenResults');
+  btn.disabled = true;
+  btn.innerHTML = '<span style="animation:pulse 1s infinite;display:inline-block">スキャン中...</span>';
+  results.innerHTML = `<div class="screen-empty">
+    <div class="loading">約70銘柄をスコアリング中です（20〜40秒）...</div>
+    <div style="font-size:0.8rem;color:#475569;margin-top:8px">yfinanceで順次データを取得しています</div>
+  </div>`;
+
+  try {
+    const r = await fetch(`/api/screen?market=${selectedMarket}`);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'エラー');
+
+    if (!d.results.length) {
+      results.innerHTML = '<div class="screen-empty">条件に合う銘柄が見つかりませんでした</div>';
+      return;
+    }
+
+    const barColor = pct => pct >= 70 ? '#34d399' : pct >= 45 ? '#fbbf24' : '#f87171';
+
+    const cards = d.results.map((s, i) => {
+      const passTags = (s.passed || []).map(t => `<span class="screen-tag screen-tag-pass">✅ ${t}</span>`).join('');
+      const failTags = (s.failed || []).map(t => `<span class="screen-tag screen-tag-fail">❌ ${t}</span>`).join('');
+      return `
+        <div class="screen-card" onclick="pickStock('${s.ticker}')">
+          <div class="screen-card-header">
+            <span class="screen-rank">${i + 1}</span>
+            <span class="screen-ticker">${s.ticker}</span>
+            <span class="screen-name">${s.name}</span>
+            <span class="screen-price">${s.price}</span>
+          </div>
+          <div class="screen-score-bar">
+            <span class="screen-score-label">MB ${s.mb_score}/11点</span>
+            <div class="bar-track" style="flex:1"><div class="bar-fill" style="width:${s.mb_pct}%;background:${barColor(s.mb_pct)}"></div></div>
+            <span style="font-size:0.78rem;color:#64748b;min-width:36px;text-align:right">${s.mb_pct}%</span>
+          </div>
+          <div class="screen-tags">${passTags}${failTags}</div>
+        </div>`;
+    }).join('');
+
+    results.innerHTML = `
+      <div class="screen-meta">スキャン: ${d.scanned}銘柄 → 上位 ${d.results.length}件を表示</div>
+      <div class="screen-result-list">${cards}</div>`;
+  } catch(e) {
+    results.innerHTML = `<div class="screen-empty">エラー: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span>再スキャン</span>';
+  }
+}
+
+function pickStock(ticker) {
+  closeScreener();
+  if (!watchlist.includes(ticker)) {
+    watchlist.push(ticker);
+    localStorage.setItem('watchlist', JSON.stringify(watchlist));
+    renderWatchlist();
+  }
+  searchStock(ticker);
+}
+
+renderWatchlist();
+</script>
+</body>
+</html>

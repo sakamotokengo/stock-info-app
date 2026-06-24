@@ -1,0 +1,7 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+yfinance==0.2.40
+feedparser==6.0.11
+requests==2.32.3
+beautifulsoup4==4.12.3
+Pillow==10.4.0
