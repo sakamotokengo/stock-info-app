@@ -370,6 +370,22 @@ function addAndSearch() {
   searchStock(v);
 }
 
+// レスポンスを安全にJSONパース（空レスポンス・HTML応答対応）
+async function safeJson(r) {
+  const text = await r.text();
+  if (!text || text.trim() === '') {
+    throw new Error('サーバーが起動中です。10〜30秒後に再度お試しください。');
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (r.status === 502 || r.status === 503 || r.status === 0) {
+      throw new Error('サーバーが起動中です。30秒ほど待ってから再試行してください。');
+    }
+    throw new Error(`サーバーエラー (${r.status})`);
+  }
+}
+
 async function searchStock(ticker) {
   currentTicker = ticker;
   document.getElementById('searchInput').value = ticker;
@@ -395,8 +411,8 @@ async function searchStock(ticker) {
 async function loadStock(ticker) {
   try {
     const r = await fetch(`/api/stock/${ticker}`);
-    if (!r.ok) { const e = await r.json(); throw new Error(e.detail); }
-    const d = await r.json();
+    const d = await safeJson(r);
+    if (!r.ok) throw new Error(d.detail || `エラー (${r.status})`);
 
     const changeSign = d.change_pct >= 0 ? '+' : '';
     const changeClass = d.change_pct >= 0 ? 'up' : 'down';
@@ -465,7 +481,7 @@ async function loadStock(ticker) {
 async function loadFinancials(ticker) {
   try {
     const r = await fetch(`/api/financials/${ticker}`);
-    const d = await r.json();
+    const d = await safeJson(r);
     const rows = [
       ['売上高', d.revenue != null ? d.revenue+'億' : 'N/A'],
       ['純利益', d.net_income != null ? d.net_income+'億' : 'N/A'],
@@ -490,7 +506,7 @@ async function loadFinancials(ticker) {
 async function loadNews() {
   try {
     const r = await fetch('/api/news');
-    const d = await r.json();
+    const d = await safeJson(r);
     if (!d.articles.length) { document.getElementById('newsSection').innerHTML = '<div class="empty">ニュースなし</div>'; return; }
     const html = d.articles.slice(0,12).map(a => `
       <div class="news-item">
@@ -513,7 +529,7 @@ async function loadBbs(ticker) {
   }
   try {
     const r = await fetch(`/api/bbs/${code}`);
-    const d = await r.json();
+    const d = await safeJson(r);
     if (!d.posts || !d.posts.length) {
       document.getElementById('bbsSection').innerHTML = `
         <div class="empty">掲示板の投稿が取得できませんでした<br>
@@ -566,7 +582,7 @@ async function runAnalysis() {
 
   try {
     const r = await fetch(`/api/analyze/${currentTicker}`);
-    const d = await r.json();
+    const d = await safeJson(r);
     if (!r.ok) { throw new Error(d.detail || 'エラーが発生しました'); }
 
     const verdictClass = `verdict-${d.verdict}`;
@@ -678,7 +694,7 @@ async function runScreener() {
 
   try {
     const r = await fetch(`/api/screen?market=${selectedMarket}`);
-    const d = await r.json();
+    const d = await safeJson(r);
     if (!r.ok) throw new Error(d.detail || 'エラー');
 
     if (!d.results.length) {
