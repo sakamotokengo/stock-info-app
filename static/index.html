@@ -727,7 +727,7 @@ async function runScreener() {
       const failTags = (s.failed || []).map(t => `<span class="screen-tag screen-tag-fail">❌ ${t}</span>`).join('');
       const sigColor = s.signal === 'BUY' ? '#34d399' : s.signal === 'SELL' ? '#f87171' : '#fbbf24';
       const chgColor = s.chg_1m >= 0 ? '#34d399' : '#f87171';
-      const chgStr = s.chg_1m !== null ? `<span style="color:${chgColor};font-size:0.8rem;margin-left:8px">${s.chg_1m >= 0 ? '+' : ''}${s.chg_1m}% (1M)</span>` : '';
+      const chgStr = (s.chg_1m != null) ? `<span style="color:${chgColor};font-size:0.8rem;margin-left:8px">${s.chg_1m >= 0 ? '+' : ''}${s.chg_1m}% (1M)</span>` : '';
       const tradePlan = (s.signal === 'BUY' && s.stop_pct) ? `
         <div class="screen-trade-plan">
           <span class="stp-item"><span class="stp-label">損切</span>-${s.stop_pct}%</span>
