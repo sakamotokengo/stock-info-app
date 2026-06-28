@@ -679,9 +679,12 @@ def _quick_mb_score(ticker: str) -> Optional[dict]:
             chg_1m = None; stop_pct = None; target_pct = None
 
         # 売買シグナル簡易判定
+        # 営業赤字は絶対にBUY不可（論文の必須条件）
         pos_count = len(passed)
         neg_count = len(failed)
-        if score >= 7 and neg_count <= 1:
+        if op_margin is not None and op_margin <= 0:
+            signal = "HOLD"
+        elif score >= 7 and neg_count <= 1:
             signal = "BUY"
         elif score <= 4 or neg_count >= 3:
             signal = "HOLD"
