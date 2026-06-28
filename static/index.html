@@ -153,6 +153,10 @@
     .btn-screen { background:#4f46e5; color:#fff; border:none; border-radius:8px; padding:8px 16px; font-weight:600; cursor:pointer; font-size:0.85rem; transition:background 0.2s; }
     .btn-screen:hover { background:#6366f1; }
     .screen-meta { font-size:0.8rem; color:#64748b; margin-bottom:12px; }
+    .screen-trade-plan { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; padding:8px 10px; background:#0f172a; border-radius:8px; border:1px solid #334155; }
+    .stp-item { font-size:0.78rem; color:#e2e8f0; }
+    .stp-label { font-size:0.7rem; color:#64748b; display:block; }
+    .stp-tgt { color:#34d399; }
     .btn-analyze { background: #4f46e5; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-weight: 600; cursor: pointer; font-size: 0.9rem; transition: background 0.2s; display: flex; align-items: center; gap: 6px; }
     .btn-analyze:hover { background: #6366f1; }
     .btn-analyze:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -268,6 +272,17 @@
       <span>スクリーニング実行</span>
     </button>
     <div id="screenResults"></div>
+  </div>
+</div>
+
+<!-- 比較モーダル -->
+<div id="compareOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#1e293b;border:1px solid #334155;border-radius:16px;width:100%;max-width:900px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #334155;position:sticky;top:0;background:#1e293b;z-index:1">
+      <h2 style="font-size:1rem;color:#38bdf8">📊 上位銘柄 比較分析</h2>
+      <button class="btn-close" onclick="closeCompare()">✕</button>
+    </div>
+    <div id="compareBody" style="padding:0"></div>
   </div>
 </div>
 
@@ -704,28 +719,58 @@ async function runScreener() {
 
     const barColor = pct => pct >= 70 ? '#34d399' : pct >= 45 ? '#fbbf24' : '#f87171';
 
+    // 比較用に上位5件のtickerを保持
+    const top5 = d.results.slice(0, 5).map(s => s.ticker);
+
     const cards = d.results.map((s, i) => {
       const passTags = (s.passed || []).map(t => `<span class="screen-tag screen-tag-pass">✅ ${t}</span>`).join('');
       const failTags = (s.failed || []).map(t => `<span class="screen-tag screen-tag-fail">❌ ${t}</span>`).join('');
+      const sigColor = s.signal === 'BUY' ? '#34d399' : s.signal === 'SELL' ? '#f87171' : '#fbbf24';
+      const chgColor = s.chg_1m >= 0 ? '#34d399' : '#f87171';
+      const chgStr = s.chg_1m !== null ? `<span style="color:${chgColor};font-size:0.8rem;margin-left:8px">${s.chg_1m >= 0 ? '+' : ''}${s.chg_1m}% (1M)</span>` : '';
+      const tradePlan = (s.signal === 'BUY' && s.stop_pct) ? `
+        <div class="screen-trade-plan">
+          <span class="stp-item"><span class="stp-label">損切</span>-${s.stop_pct}%</span>
+          <span class="stp-item stp-tgt"><span class="stp-label">目標</span>+${s.target_pct}%</span>
+          ${s.fwd_per ? `<span class="stp-item"><span class="stp-label">予想PER</span>${s.fwd_per}x</span>` : ''}
+          ${s.pbr ? `<span class="stp-item"><span class="stp-label">PBR</span>${s.pbr}x</span>` : ''}
+          ${s.op_margin ? `<span class="stp-item"><span class="stp-label">営業利益率</span>${s.op_margin}%</span>` : ''}
+        </div>` : '';
       return `
-        <div class="screen-card" onclick="pickStock('${s.ticker}')">
+        <div class="screen-card">
           <div class="screen-card-header">
             <span class="screen-rank">${i + 1}</span>
-            <span class="screen-ticker">${s.ticker}</span>
-            <span class="screen-name">${s.name}</span>
-            <span class="screen-price">${s.price}</span>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span class="screen-ticker">${s.ticker}</span>
+                <span class="screen-name">${s.name}</span>
+              </div>
+              ${s.sector ? `<div style="font-size:0.75rem;color:#64748b;margin-top:2px">${s.sector}</div>` : ''}
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:0.95rem;font-weight:700">${s.price}${chgStr}</div>
+              <span style="background:${sigColor}22;color:${sigColor};border:1px solid ${sigColor}55;border-radius:4px;padding:2px 8px;font-size:0.75rem;font-weight:700">${s.signal}</span>
+            </div>
           </div>
           <div class="screen-score-bar">
             <span class="screen-score-label">MB ${s.mb_score}/11点</span>
             <div class="bar-track" style="flex:1"><div class="bar-fill" style="width:${s.mb_pct}%;background:${barColor(s.mb_pct)}"></div></div>
             <span style="font-size:0.78rem;color:#64748b;min-width:36px;text-align:right">${s.mb_pct}%</span>
           </div>
+          ${tradePlan}
           <div class="screen-tags">${passTags}${failTags}</div>
+          <div style="margin-top:10px;display:flex;gap:8px">
+            <button class="btn" style="font-size:0.78rem;padding:5px 12px;flex:1" onclick="pickStock('${s.ticker}')">詳細分析</button>
+            <button class="btn btn-ghost" style="font-size:0.78rem;padding:5px 12px" onclick="pickAndAnalyze('${s.ticker}')">売買判断まで実行</button>
+          </div>
         </div>`;
     }).join('');
 
     results.innerHTML = `
-      <div class="screen-meta">スキャン: ${d.scanned}銘柄 → 上位 ${d.results.length}件を表示</div>
+      <div class="screen-meta" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <span>スキャン: ${d.scanned}銘柄 → 上位 ${d.results.length}件</span>
+        <button class="btn btn-ghost" style="font-size:0.8rem;padding:5px 14px" onclick="showCompare('${top5.join(',')}','${d.market}')">📊 上位5件を比較</button>
+      </div>
       <div class="screen-result-list">${cards}</div>`;
   } catch(e) {
     results.innerHTML = `<div class="screen-empty">エラー: ${e.message}</div>`;
@@ -743,6 +788,102 @@ function pickStock(ticker) {
     renderWatchlist();
   }
   searchStock(ticker);
+}
+
+async function pickAndAnalyze(ticker) {
+  closeScreener();
+  if (!watchlist.includes(ticker)) {
+    watchlist.push(ticker);
+    localStorage.setItem('watchlist', JSON.stringify(watchlist));
+    renderWatchlist();
+  }
+  await searchStock(ticker);
+  // ページをスクロールしてから分析実行
+  setTimeout(() => {
+    document.getElementById('aiSection').scrollIntoView({ behavior: 'smooth' });
+    runAnalysis();
+  }, 600);
+}
+
+let compareData = [];
+
+async function showCompare(tickersCsv, market) {
+  compareData = [];
+  const overlay = document.getElementById('compareOverlay');
+  const body = document.getElementById('compareBody');
+  overlay.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  body.innerHTML = '<div class="loading" style="padding:40px;text-align:center">データ取得中...</div>';
+
+  try {
+    const r = await fetch(`/api/compare?tickers=${encodeURIComponent(tickersCsv)}&market=${market}`);
+    const d = await safeJson(r);
+    compareData = d.results;
+    renderCompareTable(d.results);
+  } catch(e) {
+    body.innerHTML = `<div style="padding:20px;color:#f87171">エラー: ${e.message}</div>`;
+  }
+}
+
+function renderCompareTable(results) {
+  const body = document.getElementById('compareBody');
+  if (!results.length) { body.innerHTML = '<div style="padding:20px">データなし</div>'; return; }
+
+  const barColor = pct => pct >= 70 ? '#34d399' : pct >= 45 ? '#fbbf24' : '#f87171';
+  const sigColor = s => s === 'BUY' ? '#34d399' : s === 'SELL' ? '#f87171' : '#fbbf24';
+
+  const rows = [
+    ['MBスコア', s => `<div style="display:flex;align-items:center;gap:6px"><div style="width:60px;height:6px;background:#1e293b;border-radius:3px"><div style="width:${s.mb_pct}%;height:100%;background:${barColor(s.mb_pct)};border-radius:3px"></div></div><span style="font-size:0.85rem">${s.mb_score}/11</span></div>`],
+    ['売買判断', s => `<span style="color:${sigColor(s.signal)};font-weight:700">${s.signal}</span>`],
+    ['株価(1M)', s => s.chg_1m !== null ? `<span style="color:${s.chg_1m >= 0 ? '#34d399' : '#f87171'}">${s.chg_1m >= 0 ? '+' : ''}${s.chg_1m}%</span>` : 'N/A'],
+    ['損切ライン', s => s.stop_pct ? `-${s.stop_pct}%` : 'N/A'],
+    ['目標ライン', s => s.target_pct ? `+${s.target_pct}%` : 'N/A'],
+    ['予想PER', s => s.fwd_per ? `${s.fwd_per}x` : 'N/A'],
+    ['PBR', s => s.pbr ? `${s.pbr}x` : 'N/A'],
+    ['営業利益率', s => s.op_margin ? `${s.op_margin}%` : 'N/A'],
+    ['セクター', s => s.sector || 'N/A'],
+  ];
+
+  const headerCells = results.map(s => `
+    <th style="padding:10px 12px;text-align:center;min-width:120px">
+      <div style="font-weight:700;color:#38bdf8">${s.ticker}</div>
+      <div style="font-size:0.75rem;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px">${s.name}</div>
+      <div style="font-size:0.85rem;margin-top:2px">${s.price}</div>
+    </th>`).join('');
+
+  const bodyRows = rows.map(([label, fn]) => {
+    const cells = results.map(s => `<td style="padding:8px 12px;text-align:center;border-top:1px solid #334155">${fn(s)}</td>`).join('');
+    return `<tr><td style="padding:8px 12px;color:#94a3b8;font-size:0.82rem;white-space:nowrap;border-top:1px solid #334155;background:#0f172a">${label}</td>${cells}</tr>`;
+  }).join('');
+
+  const passFail = results.map(s => {
+    const tags = (s.passed||[]).map(t=>`<span class="screen-tag screen-tag-pass" style="font-size:0.7rem;padding:2px 6px">✅ ${t}</span>`).join('');
+    return `<td style="padding:8px 12px;border-top:1px solid #334155;vertical-align:top"><div style="display:flex;flex-wrap:wrap;gap:3px">${tags}</div></td>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+        <thead style="background:#1e293b">
+          <tr>
+            <th style="padding:10px 12px;text-align:left;color:#64748b;font-size:0.78rem">項目</th>
+            ${headerCells}
+          </tr>
+        </thead>
+        <tbody>
+          ${bodyRows}
+          <tr><td style="padding:8px 12px;color:#94a3b8;font-size:0.82rem;border-top:1px solid #334155;background:#0f172a">通過項目</td>${passFail}</tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap">
+      ${results.map(s => `<button class="btn" style="font-size:0.8rem;padding:6px 14px" onclick="closeCompare();pickAndAnalyze('${s.ticker}')">${s.ticker} を詳細分析</button>`).join('')}
+    </div>`;
+}
+
+function closeCompare() {
+  document.getElementById('compareOverlay').style.display = 'none';
+  document.body.style.overflow = '';
 }
 
 renderWatchlist();

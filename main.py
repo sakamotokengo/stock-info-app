@@ -661,17 +661,54 @@ def _quick_mb_score(ticker: str) -> Optional[dict]:
             return None
 
         price = cur
+
+        # 直近値動き（1ヶ月）
+        try:
+            hist = t.history(period="1mo")
+            if not hist.empty:
+                prices_1m = hist["Close"].tolist()
+                chg_1m = (prices_1m[-1] / prices_1m[0] - 1) * 100 if len(prices_1m) > 1 else 0
+                vol_daily = hist["Close"].pct_change().std() * 100
+                # ボラティリティベース損切・目標
+                import math
+                stop_pct = min(25, max(7, vol_daily * 2 * math.sqrt(3)))
+                target_pct = stop_pct * 2
+            else:
+                chg_1m = None; stop_pct = None; target_pct = None
+        except Exception:
+            chg_1m = None; stop_pct = None; target_pct = None
+
+        # 売買シグナル簡易判定
+        pos_count = len(passed)
+        neg_count = len(failed)
+        if score >= 7 and neg_count <= 1:
+            signal = "BUY"
+        elif score <= 4 or neg_count >= 3:
+            signal = "HOLD"
+        else:
+            signal = "BUY" if pos_count > neg_count * 2 else "HOLD"
+
         price_str = f"¥{price:,.0f}" if currency == "JPY" else f"${price:.2f}"
         return {
             "ticker": resolved,
             "name": info.get("longName") or info.get("shortName", resolved),
             "sector": info.get("sector", ""),
+            "industry": info.get("industry", ""),
             "price": price_str,
+            "price_raw": price,
             "currency": currency,
             "mb_score": score,
             "mb_pct": min(100, round(score / 11 * 100)),
             "passed": passed,
             "failed": failed,
+            "signal": signal,
+            "chg_1m": round(chg_1m, 1) if chg_1m is not None else None,
+            "stop_pct": round(stop_pct, 1) if stop_pct else None,
+            "target_pct": round(target_pct, 1) if target_pct else None,
+            "mkt_cap": mkt_cap,
+            "fwd_per": round(fwd_per, 1) if fwd_per else None,
+            "pbr": round(pbr, 2) if pbr else None,
+            "op_margin": round(op_margin * 100, 1) if op_margin else None,
         }
     except Exception:
         return None
@@ -690,6 +727,21 @@ def screen_stocks(market: str = "US"):
                 results.append(r)
     results.sort(key=lambda x: x["mb_score"], reverse=True)
     return {"market": market, "scanned": len(universe), "results": results[:20]}
+
+
+@app.get("/api/compare")
+def compare_stocks(tickers: str, market: str = "US"):
+    """指定銘柄リストの財務指標を並列取得して比較用に返す"""
+    ticker_list = [t.strip() for t in tickers.split(",") if t.strip()][:8]
+    results = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(_quick_mb_score, t): t for t in ticker_list}
+        for f in as_completed(futures):
+            r = f.result()
+            if r is not None:
+                results.append(r)
+    results.sort(key=lambda x: x["mb_score"], reverse=True)
+    return {"results": results}
 
 
 @app.get("/api/bbs/{ticker_code}")
