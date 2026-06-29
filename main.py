@@ -278,9 +278,14 @@ def analyze_stock(ticker: str):
             neu(); reasons.append(f"配当利回り {div_pct:.2f}%")
 
     # --- EPS（赤字チェック）---
+    # 論文(Yartseva 2025): EPS成長単独は統計的有意でない。
+    # 営業黒字ならEPS赤字ペナルティを緩和（一時的費用・減損等の可能性）
     eps = g("trailingEps")
     if eps is not None and eps < 0:
-        score -= 2; neg(f"EPS {eps:.2f} で最終赤字（収益化できていない）")
+        if op_margin is not None and op_margin > 0:
+            score -= 1; neg(f"EPS {eps:.2f} で最終赤字（ただし営業利益は黒字 — 一時的費用の可能性）")
+        else:
+            score -= 2; neg(f"EPS {eps:.2f} で最終赤字（収益化できていない）")
 
     # --- 予想PER vs 実績PERの乖離（増益・減益予想）---
     fwd_per = g("forwardPE")
@@ -292,6 +297,41 @@ def analyze_stock(ticker: str):
             score -= 1; neg(f"予想PER {fwd_per:.1f}倍が実績 {per:.1f}倍を上回り、減益・利益圧縮の懸念")
         else:
             neu()
+    elif fwd_per is not None and fwd_per < 15:
+        score += 1; pos(f"予想PER {fwd_per:.1f}倍は割安水準（実績PER未計算）")
+
+    # --- FCF利回り（論文の最重要因子）---
+    fcf = g("freeCashflow")
+    mkt_cap_raw = g("marketCap")
+    if fcf is not None and mkt_cap_raw and mkt_cap_raw > 0:
+        fcf_yield = fcf / mkt_cap_raw * 100
+        if fcf_yield >= 5:
+            score += 2; pos(f"FCF利回り {fcf_yield:.1f}% — 論文が実証した重要因子。高い余剰キャッシュ")
+        elif fcf_yield >= 2:
+            score += 1; pos(f"FCF利回り {fcf_yield:.1f}% でキャッシュ創出力あり")
+        elif fcf_yield < 0:
+            score -= 1; neg(f"FCF利回り {fcf_yield:.1f}% でフリーキャッシュフローが負")
+
+    # --- 52週レンジ（エントリーポイント）---
+    low52 = g("fiftyTwoWeekLow")
+    high52 = g("fiftyTwoWeekHigh")
+    cur_price = g("currentPrice") or g("regularMarketPrice")
+    if low52 and high52 and cur_price and high52 > low52:
+        range_pos = (cur_price - low52) / (high52 - low52) * 100
+        if range_pos <= 30:
+            score += 1; pos(f"52週安値圏 ({range_pos:.0f}%) — 論文が示す有利なエントリーポイント")
+        elif range_pos >= 80:
+            score -= 1; neg(f"52週高値圏 ({range_pos:.0f}%) — 論文の推奨エントリーではない")
+
+    # --- EV/EBITDA（割安度）---
+    ebitda = g("ebitda")
+    ev = g("enterpriseValue")
+    if ebitda and ev and ebitda > 0:
+        ev_ebitda = ev / ebitda
+        if ev_ebitda < 8:
+            score += 1; pos(f"EV/EBITDA {ev_ebitda:.1f}倍 — 低水準で割安")
+        elif ev_ebitda > 20:
+            score -= 1; neg(f"EV/EBITDA {ev_ebitda:.1f}倍 — 割高水準")
 
     # --- 時価総額（小型株リスク）---
     mkt_cap = g("marketCap")
@@ -316,7 +356,31 @@ def analyze_stock(ticker: str):
             neg(f"金融セクターの高レバレッジ（D/E {de:.0f}）は業種特性も考慮が必要")
 
     # --- 判定 ---
-    if score >= 4:
+    # MBスコアを事前計算して判定に加味（統合）
+    _mb_pre = 0
+    _pbr_tmp = g("priceToBook")
+    _op_tmp = g("operatingMargins")
+    _fcf_tmp = g("freeCashflow")
+    _mc_tmp = g("marketCap")
+    _cur_tmp = g("currency") or ""
+    if _mc_tmp:
+        _mb_pre += 2 if (_cur_tmp == "JPY" and _mc_tmp/1e8 < 500) or (_cur_tmp != "JPY" and _mc_tmp < 2e9) else (1 if (_cur_tmp == "JPY" and _mc_tmp/1e8 < 5000) or (_cur_tmp != "JPY" and _mc_tmp < 10e9) else 0)
+    if _pbr_tmp and _pbr_tmp > 0:
+        _mb_pre += 2 if 1/_pbr_tmp >= 1.0 else (1 if 1/_pbr_tmp >= 0.4 else 0)
+    if _op_tmp is not None:
+        _mb_pre += 2 if _op_tmp > 0 else -1
+    if _fcf_tmp and _mc_tmp and _mc_tmp > 0:
+        _fy = _fcf_tmp / _mc_tmp * 100
+        _mb_pre += 2 if _fy >= 3 else (1 if _fy > 0 else 0)
+
+    # 営業赤字は絶対にBUY不可
+    _op_check = g("operatingMargins")
+    if _op_check is not None and _op_check <= 0:
+        verdict = "HOLD"
+    elif score >= 4:
+        verdict = "BUY"
+    elif score >= 2 and _mb_pre >= 6:
+        # 通常スコアがやや弱くても論文基準で高評価なら引き上げ
         verdict = "BUY"
     elif score <= -3:
         verdict = "SELL"
